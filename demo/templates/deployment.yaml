@@ -37,6 +37,18 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+          envFrom:
+            {{- if .Values.configMap }}
+            - configMapRef:
+                name: {{ .Release.Name }}
+            {{- end }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis
+                  key: redis-password
+                  optional: false
           livenessProbe:
             httpGet:
               path: /health

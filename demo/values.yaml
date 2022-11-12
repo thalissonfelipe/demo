@@ -6,7 +6,7 @@ replicaCount: 3
 
 image:
   repository: localhost:5001/demo
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"
 
@@ -83,3 +83,4 @@ configMap:
   SERVER_ADDRESS: "0.0.0.0:3000"
   SERVER_READ_TIMEOUT: "5s"
   SERVER_WRITE_TIMEOUT: "15s"
+  REDIS_ADDRESS: "redis-master.demo:6379"

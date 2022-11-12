@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/kelseyhightower/envconfig"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -33,6 +34,8 @@ func main() {
 	if err != nil {
 		logger.Panic("failed to load config", zap.Error(err))
 	}
+
+	testRedis(logger, cfg)
 
 	mux := http.NewServeMux()
 	setupRoutes(mux, logger)
@@ -88,10 +91,40 @@ func setupRoutes(mux *http.ServeMux, logger *zap.Logger) {
 	})
 }
 
+func testRedis(logger *zap.Logger, cfg Config) {
+	cl := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddress,
+		Password: cfg.RedisPassword,
+	})
+
+	if err := cl.Ping(context.Background()).Err(); err != nil {
+		logger.Panic("failed to ping redis client", zap.Error(err))
+	}
+
+	const (
+		key   = "demo"
+		value = "test"
+	)
+
+	if err := cl.Set(context.Background(), key, value, 0).Err(); err != nil {
+		logger.Panic("failed to set redis key", zap.Error(err))
+	}
+
+	val, err := cl.Get(context.Background(), key).Result()
+	if err != nil {
+		logger.Panic("failed to get redis key", zap.Error(err))
+	}
+
+	logger.Info("getting data from redis", zap.String(key, val))
+}
+
 type Config struct {
 	ServerAddress      string        `envconfig:"SERVER_ADDRESS" default:"0.0.0.0:3000"`
 	ServerReadTimeout  time.Duration `envconfig:"SERVER_READ_TIMEOUT" default:"5s"`
 	ServerWriteTimeout time.Duration `envconfig:"SERVER_WRITE_TIMEOUT" default:"15s"`
+
+	RedisAddress  string `envconfig:"REDIS_ADDRESS" default:"0.0.0.0:6379"`
+	RedisPassword string `envconfig:"REDIS_PASSWORD" required:"true"`
 }
 
 func loadConfig() (Config, error) {
