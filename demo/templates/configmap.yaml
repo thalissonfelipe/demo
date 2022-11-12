@@ -1,0 +1,14 @@
+{{ if .Values.configMap }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    {{- include "demo.labels" . | nindent 4 }}
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+data:
+  {{- with .Values.configMap }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{ end }}
