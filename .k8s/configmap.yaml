@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-configmap
+  namespace: demo
+data:
+  SERVER_ADDRESS: "0.0.0.0:3000"
+  SERVER_READ_TIMEOUT: "5s"
+  SERVER_WRITE_TIMEOUT: "15s"
