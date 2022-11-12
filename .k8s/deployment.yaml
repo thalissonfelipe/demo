@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: demo-api
+  name: demo-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+    spec:
+      containers:
+      - image: localhost:5001/demo:latest
+        name: demo-api
+        ports:
+          - name: http-api
+            containerPort: 3000
+        envFrom:
+          - configMapRef:
+              name: demo-configmap

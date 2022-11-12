@@ -1,16 +1,16 @@
 ---
-apiVersion: v1
-kind: Pod
-metadata:
-  labels:
-    name: demo-api
-  name: demo-api
-  namespace: demo
-spec:
-  containers:
-  - image: localhost:5001/demo:latest
-    name: demo-api
-    envFrom:
-      - configMapRef:
-          name: demo-configmap
-  restartPolicy: Always
+# apiVersion: v1
+# kind: Pod
+# metadata:
+#   labels:
+#     name: demo-api
+#   name: demo-api
+#   namespace: demo
+# spec:
+#   containers:
+#   - image: localhost:5001/demo:latest
+#     name: demo-api
+#     envFrom:
+#       - configMapRef:
+#           name: demo-configmap
+#   restartPolicy: Always
