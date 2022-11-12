@@ -30,3 +30,15 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http-api
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http-api
+          initialDelaySeconds: 10
+          periodSeconds: 5

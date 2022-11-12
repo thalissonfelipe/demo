@@ -76,6 +76,16 @@ func setupRoutes(mux *http.ServeMux, logger *zap.Logger) {
 		_, _ = w.Write([]byte("Hello World!\n"))
 		logger.Info("Hello World!")
 	})
+
+	// readiness probe
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// liveness probe
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 }
 
 type Config struct {
