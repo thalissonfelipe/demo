@@ -12,8 +12,18 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+)
+
+var (
+	counter = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "hello_request_total",
+		Help: "Number of requests",
+	})
 )
 
 func main() {
@@ -75,9 +85,10 @@ func main() {
 func setupRoutes(mux *http.ServeMux, logger *zap.Logger) {
 	// hello world
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		counter.Inc()
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Hello World!\n"))
-		logger.Info("Hello World!")
+		logger.Info("Hello World!aaa")
 	})
 
 	// readiness probe
@@ -89,6 +100,9 @@ func setupRoutes(mux *http.ServeMux, logger *zap.Logger) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+
+	// metrics
+	mux.HandleFunc("/metrics", promhttp.Handler().ServeHTTP)
 }
 
 func testRedis(logger *zap.Logger, cfg Config) {
