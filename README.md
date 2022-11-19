@@ -19,9 +19,9 @@ This project was built during my studies on Kubernetes, Redis and Grafana Stack.
 
 To run this project, you need to have a local k8s cluster, as well as a local registry where the Docker images will be stored. In this project I'm using the Kind tool to set up a local cluster with one node. You can follow this [tutorial](https://kind.sigs.k8s.io/docs/user/local-registry/) from the official documentation to create the cluster and configure the registry on your machine.
 
-### .k8s folder 
+### .k8s folder
 
-This folder contains the k8s manifests needed to run the application on the cluster, which are: service, configmaps, deployment, hpa and pod. This folder is no longer being used in the project and is here for future reference only, as the project uses helm to create the k8s manifests.
+This folder contains the k8s manifests needed to run the application on the cluster without Helm, which are: service, configmaps, deployment, hpa and pod. This folder is no longer being used in the project and is here for future reference only, as the project uses helm to create the k8s manifests.
 
 ### Namespaces
 
@@ -30,13 +30,13 @@ It is necessary to create two namespaces before applying changes to the cluster.
 - **demo**: The namespace where the application and redis will be deployed.
 - **monitoring**: The namespace where monitoring services will be deployed.
 
-Creating the demo namespace:
+Create the demo namespace:
 
 ```sh
 kubectl create namespace demo
 ```
 
-Creating the monitoring namespace:
+Create the monitoring namespace:
 
 ```sh
 kubectl create namespace monitoring
@@ -44,7 +44,7 @@ kubectl create namespace monitoring
 
 ### Helm
 
-Before deploying the application with Helm, it is necessary to install its dependencies first, which are: Redis, Grafana, Prometheus and Metrics Server.
+Before deploying the main application with Helm, it is necessary to install its dependencies first, which are: Redis, Grafana, Prometheus and Metrics Server.
 
 ***Obs**.: With the exception of the redis chart, all other dependencies installed with helm are using default settings. As the intention is not to delve into devops, I decided to follow the default settings that were already enough.
 
@@ -120,7 +120,7 @@ spec:
 #### Installing application
 
 ```sh
-make helm/install
+make demo/install
 ```
 
 ## Testing the application

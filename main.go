@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -21,11 +22,24 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// Prometheus metrics.
 var (
 	counter = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "hello_request_total",
 		Help: "Number of requests",
 	})
+
+	histogram *prometheus.HistogramVec = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_server_duration",
+			Help:    "HTTP server request duration histogram in milliseconds",
+			Buckets: []float64{0.5, 1, 5, 10, 25, 50, 100, 300, 500, 1000, 5000},
+			ConstLabels: map[string]string{
+				"http_scheme": "http",
+			},
+		},
+		[]string{"http_server_name", "http_route", "http_method", "http_status_code"},
+	)
 )
 
 func main() {
@@ -101,12 +115,16 @@ type getKeyResponse struct {
 }
 
 func setupRoutes(r chi.Router, logger *zap.Logger, cl *redis.Client) {
-	// hello world
-	r.Get("/hello", func(w http.ResponseWriter, r *http.Request) {
-		counter.Inc()
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Hello World!\n"))
-		logger.Info("Hello World!")
+	r.Group(func(r chi.Router) {
+		r.Use(promMetricsMiddleware)
+
+		// hello world
+		r.Get("/hello", func(w http.ResponseWriter, r *http.Request) {
+			counter.Inc()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("Hello World!\n"))
+			logger.Info("Hello World!")
+		})
 	})
 
 	// redis set new key
@@ -171,19 +189,6 @@ func setupRoutes(r chi.Router, logger *zap.Logger, cl *redis.Client) {
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 }
 
-func connectRedis(cfg Config) (*redis.Client, error) {
-	cl := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddress,
-		Password: cfg.RedisPassword,
-	})
-
-	if err := cl.Ping(context.Background()).Err(); err != nil {
-		return nil, fmt.Errorf("pinging redis client: %w", err)
-	}
-
-	return cl, nil
-}
-
 type Config struct {
 	ServerAddress      string        `envconfig:"SERVER_ADDRESS" default:"0.0.0.0:3000"`
 	ServerReadTimeout  time.Duration `envconfig:"SERVER_READ_TIMEOUT" default:"5s"`
@@ -202,4 +207,42 @@ func loadConfig() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func promMetricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now()
+		rec := &recorder{
+			ResponseWriter: w,
+		}
+
+		next.ServeHTTP(rec, r)
+
+		histogram.
+			WithLabelValues("http-server-demo", r.URL.Path, r.Method, strconv.Itoa(rec.status)).
+			Observe(float64(time.Since(startedAt)) / float64(time.Millisecond))
+	})
+}
+
+func connectRedis(cfg Config) (*redis.Client, error) {
+	cl := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddress,
+		Password: cfg.RedisPassword,
+	})
+
+	if err := cl.Ping(context.Background()).Err(); err != nil {
+		return nil, fmt.Errorf("pinging redis client: %w", err)
+	}
+
+	return cl, nil
+}
+
+type recorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *recorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
