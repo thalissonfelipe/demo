@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-redis/redis/v8"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus"
@@ -45,14 +47,18 @@ func main() {
 		logger.Panic("failed to load config", zap.Error(err))
 	}
 
-	testRedis(logger, cfg)
+	client, err := connectRedis(cfg)
+	if err != nil {
+		logger.Panic("failed to connect with redis", zap.Error(err))
+	}
+	defer client.Close()
 
-	mux := http.NewServeMux()
-	setupRoutes(mux, logger)
+	r := chi.NewRouter()
+	setupRoutes(r, logger, client)
 
 	srv := http.Server{
 		Addr:              cfg.ServerAddress,
-		Handler:           mux,
+		Handler:           r,
 		ReadTimeout:       cfg.ServerReadTimeout,
 		ReadHeaderTimeout: cfg.ServerReadTimeout,
 		WriteTimeout:      cfg.ServerWriteTimeout,
@@ -82,54 +88,100 @@ func main() {
 	}
 }
 
-func setupRoutes(mux *http.ServeMux, logger *zap.Logger) {
+// Redis Request and Response objects.
+
+type setKeyRequest struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type getKeyResponse struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func setupRoutes(r chi.Router, logger *zap.Logger, cl *redis.Client) {
 	// hello world
-	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/hello", func(w http.ResponseWriter, r *http.Request) {
 		counter.Inc()
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Hello World!\n"))
-		logger.Info("Hello World!aaa")
+		logger.Info("Hello World!")
+	})
+
+	// redis set new key
+	r.Post("/redis/set", func(w http.ResponseWriter, r *http.Request) {
+		var req setKeyRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logger.Error("failed to decode request body", zap.Error(err))
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		if err := cl.Set(r.Context(), req.Key, req.Value, 0).Err(); err != nil {
+			logger.Error("failed to set key", zap.Error(err))
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+
+		logger.Info("key added successfully!")
+	})
+
+	// redis get key
+	r.Get("/redis/get/{key}", func(w http.ResponseWriter, r *http.Request) {
+		key := chi.URLParam(r, "key")
+
+		val, err := cl.Get(r.Context(), key).Result()
+		if err != nil {
+			logger.Error("failed to get key", zap.Error(err))
+
+			if errors.Is(err, redis.Nil) {
+				http.Error(w, "key not found", http.StatusNotFound)
+				return
+			}
+
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		resp := getKeyResponse{
+			Key:   key,
+			Value: val,
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+
+		logger.Info("key retrieved successfully!")
 	})
 
 	// readiness probe
-	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	// liveness probe
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	// metrics
-	mux.HandleFunc("/metrics", promhttp.Handler().ServeHTTP)
+	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 }
 
-func testRedis(logger *zap.Logger, cfg Config) {
+func connectRedis(cfg Config) (*redis.Client, error) {
 	cl := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddress,
 		Password: cfg.RedisPassword,
 	})
 
 	if err := cl.Ping(context.Background()).Err(); err != nil {
-		logger.Panic("failed to ping redis client", zap.Error(err))
+		return nil, fmt.Errorf("pinging redis client: %w", err)
 	}
 
-	const (
-		key   = "demo"
-		value = "test"
-	)
-
-	if err := cl.Set(context.Background(), key, value, 0).Err(); err != nil {
-		logger.Panic("failed to set redis key", zap.Error(err))
-	}
-
-	val, err := cl.Get(context.Background(), key).Result()
-	if err != nil {
-		logger.Panic("failed to get redis key", zap.Error(err))
-	}
-
-	logger.Info("getting data from redis", zap.String(key, val))
+	return cl, nil
 }
 
 type Config struct {
