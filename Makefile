@@ -98,7 +98,7 @@ demo/install:
 .PHONY: demo/uninstall
 demo/uninstall:
 	@echo "==> Uninstalling demo helm release..."
-	@helm uninstall -n demo
+	@helm uninstall -n demo demo
 
 .PHONY: demo/port-forward
 demo/port-forward:
