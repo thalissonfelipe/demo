@@ -119,16 +119,40 @@ func setupRoutes(r chi.Router, logger *zap.Logger, cl *redis.Client) {
 		r.Use(promMetricsMiddleware)
 
 		// hello world
-		r.Get("/hello", func(w http.ResponseWriter, r *http.Request) {
-			counter.Inc()
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("Hello World!\n"))
-			logger.Info("Hello World!")
-		})
+		r.Get("/hello", helloWorld(logger))
+
+		// redis set key
+		r.Post("/redis/set", redisSetKey(cl, logger))
+
+		// redis get key
+		r.Get("/redis/get/{key}", redisGetKey(cl, logger))
 	})
 
-	// redis set new key
-	r.Post("/redis/set", func(w http.ResponseWriter, r *http.Request) {
+	// readiness probe
+	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// liveness probe
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// metrics
+	r.Get("/metrics", promhttp.Handler().ServeHTTP)
+}
+
+func helloWorld(logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		counter.Inc()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Hello World!\n"))
+		logger.Info("Hello World!")
+	}
+}
+
+func redisSetKey(cl *redis.Client, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		var req setKeyRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			logger.Error("failed to decode request body", zap.Error(err))
@@ -145,10 +169,11 @@ func setupRoutes(r chi.Router, logger *zap.Logger, cl *redis.Client) {
 		w.WriteHeader(http.StatusOK)
 
 		logger.Info("key added successfully!")
-	})
+	}
+}
 
-	// redis get key
-	r.Get("/redis/get/{key}", func(w http.ResponseWriter, r *http.Request) {
+func redisGetKey(cl *redis.Client, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		key := chi.URLParam(r, "key")
 
 		val, err := cl.Get(r.Context(), key).Result()
@@ -173,20 +198,32 @@ func setupRoutes(r chi.Router, logger *zap.Logger, cl *redis.Client) {
 		_ = json.NewEncoder(w).Encode(resp)
 
 		logger.Info("key retrieved successfully!")
-	})
+	}
+}
 
-	// readiness probe
-	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+func promMetricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now()
+		rec := &recorder{
+			ResponseWriter: w,
+		}
 
-	// liveness probe
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+		next.ServeHTTP(rec, r)
 
-	// metrics
-	r.Get("/metrics", promhttp.Handler().ServeHTTP)
+		histogram.
+			WithLabelValues("http-server-demo", r.URL.Path, r.Method, strconv.Itoa(rec.status)).
+			Observe(float64(time.Since(startedAt)) / float64(time.Millisecond))
+	})
+}
+
+type recorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *recorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }
 
 type Config struct {
@@ -209,21 +246,6 @@ func loadConfig() (Config, error) {
 	return cfg, nil
 }
 
-func promMetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		startedAt := time.Now()
-		rec := &recorder{
-			ResponseWriter: w,
-		}
-
-		next.ServeHTTP(rec, r)
-
-		histogram.
-			WithLabelValues("http-server-demo", r.URL.Path, r.Method, strconv.Itoa(rec.status)).
-			Observe(float64(time.Since(startedAt)) / float64(time.Millisecond))
-	})
-}
-
 func connectRedis(cfg Config) (*redis.Client, error) {
 	cl := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddress,
@@ -235,14 +257,4 @@ func connectRedis(cfg Config) (*redis.Client, error) {
 	}
 
 	return cl, nil
-}
-
-type recorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (r *recorder) WriteHeader(status int) {
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
 }
